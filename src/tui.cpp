@@ -1,9 +1,13 @@
 #include <string>
 #include <ncurses.h>
+#include <panel.h>
 #include <locale.h>
+#include <chrono>
+#include <thread>
+#include <vector>
 #include "tui.h"
 
-
+// Constructor - initializes ncurses and basic setup
 TUI::TUI() {
     init_ncurses();
     socket_address_ = "0.0.0.0:8080";
@@ -14,146 +18,206 @@ TUI::TUI() {
     clients_.push_back("Worker Node 2 (192.168.1.102:8082)");
 }
 
+// Destructor - cleans up resources
 TUI::~TUI() {
-    del_panel(intro_panel_);
-    del_panel(main_panel_);
-    delwin(intro_win_);
-    delwin(main_win_);
-    delwin(client_win_);
-    delwin(status_win_);
-    endwin();
+    cleanup_resources();
 }
 
+// Initialize ncurses library and settings
 void TUI::init_ncurses() {
     // Set up locale for UTF-8 support
     setlocale(LC_ALL, "");
     
+    // Initialize ncurses
     initscr();
-    cbreak();
-    noecho();
-    keypad(stdscr, TRUE);
-    curs_set(0);
+    start_color();
+    cbreak();           // Line buffering disabled
+    noecho();           // Don't echo input
+    keypad(stdscr, TRUE); // Enable function keys
+    curs_set(0);        // Hide cursor
     
-    if (has_colors()) {
-        start_color();
-        init_pair(1, COLOR_WHITE, COLOR_BLUE);
-        init_pair(2, COLOR_BLACK, COLOR_WHITE);
-        init_pair(3, COLOR_YELLOW, COLOR_BLACK);
-    }
+    // Define color pairs
+    init_pair(1, COLOR_WHITE, COLOR_BLACK);
+    init_pair(2, COLOR_RED, COLOR_BLACK);
+    init_pair(3, COLOR_GREEN, COLOR_BLACK);
+    init_pair(4, COLOR_YELLOW, COLOR_BLACK);
     
+    // Get terminal dimensions
     getmaxyx(stdscr, term_height_, term_width_);
+    
+    refresh();
 }
 
+// Clean up all resources before destruction
+void TUI::cleanup_resources() {
+    // Clean up ncurses windows and panels
+    if (intro_panel_) {
+        del_panel(intro_panel_);
+        intro_panel_ = nullptr;
+    }
+    
+    if (main_panel_) {
+        del_panel(main_panel_);
+        main_panel_ = nullptr;
+    }
+    
+    if (intro_win_) {
+        delwin(intro_win_);
+        intro_win_ = nullptr;
+    }
+    
+    if (main_win_) {
+        delwin(main_win_);
+        main_win_ = nullptr;
+    }
+    
+    if (client_win_) {
+        delwin(client_win_);
+        client_win_ = nullptr;
+    }
+    
+    if (status_win_) {
+        delwin(status_win_);
+        status_win_ = nullptr;
+    }
+    
+    // Shut down ncurses
+    endwin();
+}
+
+// Create the intro/welcome screen
 void TUI::create_intro_screen() {
-    // Increase window size to fit the banner plus controls
-    int height = 22;  // Increased for the banner plus controls
-    int width = 60;   // Increased width to better fit the banner
+    // Set size and position for intro window
+    int height = 20;
+    int width = 60;
     int y = (term_height_ - height) / 2;
     int x = (term_width_ - width) / 2;
     
+    // Create window and panel
     intro_win_ = newwin(height, width, y, x);
     intro_panel_ = new_panel(intro_win_);
+    
+    // Enable special keys for this window
+    keypad(intro_win_, TRUE);
+    
+    // Ensure window has a border
     box(intro_win_, 0, 0);
     
+    // Render the intro screen content
     render_intro_screen();
 }
 
+// Draw the content of the intro screen
 void TUI::render_intro_screen() {
-    // Get window width directly
+    if (!intro_win_) return;
+    
+    // Get window width for centering
     int win_width = getmaxx(intro_win_);
     
-    // Simple intro message
-    const char* welcome_msg = "Welcome to PeerPulse";
-    const char* tagline = "Distributed Computing Platform";
-    
-    // Clear the window before drawing
+    // Clear the window
     wclear(intro_win_);
     box(intro_win_, 0, 0);
     
-    // Draw the welcome message
+    // Welcome messages
+    const char* welcome_msg = "Welcome to PeerPulse";
+    const char* tagline = "Distributed Computing Platform";
+    
+    // Position for the welcome message
     int welcome_y = 5;
+    
+    // Draw the welcome text
     wattron(intro_win_, COLOR_PAIR(3) | A_BOLD);
     mvwprintw(intro_win_, welcome_y, (win_width - strlen(welcome_msg)) / 2, "%s", welcome_msg);
     wattroff(intro_win_, COLOR_PAIR(3) | A_BOLD);
     
-    // Draw the tagline
+    // Draw the tagline text
     wattron(intro_win_, COLOR_PAIR(3));
     mvwprintw(intro_win_, welcome_y + 2, (win_width - strlen(tagline)) / 2, "%s", tagline);
     wattroff(intro_win_, COLOR_PAIR(3));
     
-    // Continue button
-    wattron(intro_win_, COLOR_PAIR(2));
-    mvwprintw(intro_win_, welcome_y + 5, (win_width - 10) / 2, " CONNECT ");
-    wattroff(intro_win_, COLOR_PAIR(2));
+    // Draw a connect button
+    wattron(intro_win_, COLOR_PAIR(2) | A_BOLD);
+    mvwprintw(intro_win_, welcome_y + 6, (win_width - 10) / 2, " CONNECT ");
+    wattroff(intro_win_, COLOR_PAIR(2) | A_BOLD);
     
-    mvwprintw(intro_win_, welcome_y + 7, (win_width - 23) / 2, "Press Enter to continue");
+    // Add instruction text
+    mvwprintw(intro_win_, welcome_y + 9, (win_width - 25) / 2, "Press ENTER to continue");
     
     // Add window title
     wattron(intro_win_, A_BOLD);
     mvwprintw(intro_win_, 0, (win_width - 12) / 2, " PeerPulse ");
     wattroff(intro_win_, A_BOLD);
     
-    // Ensure changes are shown
+    // Refresh the window and panel
     wrefresh(intro_win_);
     update_panels();
     doupdate();
 }
 
+// Remove the intro screen
 void TUI::destroy_intro_screen() {
-    del_panel(intro_panel_);
-    delwin(intro_win_);
-    intro_win_ = nullptr;
-    intro_panel_ = nullptr;
+    if (intro_panel_) {
+        del_panel(intro_panel_);
+        intro_panel_ = nullptr;
+    }
+    
+    if (intro_win_) {
+        delwin(intro_win_);
+        intro_win_ = nullptr;
+    }
 }
 
+// Create the main interface screen
 void TUI::create_main_interface() {
-    // Make the main window slightly bigger if possible
-    int height = term_height_ - 2;
-    int width = term_width_ - 2;  // Fixed width calculation
-    
-    main_win_ = newwin(height, width, 1, 1);
+    // Create a full-screen window for the main interface
+    main_win_ = newwin(term_height_, term_width_, 0, 0);
     main_panel_ = new_panel(main_win_);
-    box(main_win_, 0, 0);
     
-    // Client window (left 30%)
-    int client_width = (width - 2) * 0.3;
-    client_win_ = newwin(height - 4, client_width - 1, 2, 2);
-    box(client_win_, 0, 0);
+    // Enable special keys for this window
+    keypad(main_win_, TRUE);
     
-    // Status window (right 70%)
-    int status_width = (width - 2) * 0.7 - 1;
-    status_win_ = newwin(height - 4, status_width, 2, client_width + 1);
-    box(status_win_, 0, 0);
-    
+    // Render the main interface content
     render_main_interface();
+    
+    // Initialize status message
+    update_status("PeerPulse started successfully");
+    
+    // Refresh the window and panel
+    update_panels();
+    doupdate();
 }
 
+// Draw the content of the main interface
 void TUI::render_main_interface() {
+    if (!main_win_) return;
+    
     // Get window dimensions
     int win_width = getmaxx(main_win_);
     
-    // Simple ASCII art banner without escape characters
-    const char* banner[] = {
-        " _____                _____      _          ",
-        "|  __ \\              |  __ \\    | |         ",
-        "| |__) |__  ___ _ __| |__) |   | |___  ___ ",
-        "|  ___/ _ \\/ _ \\ '__|  ___/ |  | / __|/ _ \\",
-        "| |  |  __/  __/ |  | |   | |__| \\__ \\  __/",
-        "|_|   \\___|\\___|_|  |_|    \\____/|___/\\___|",
-        "                                            ",
-        "       DISTRIBUTED COMPUTING PLATFORM       ",
-        "                                            "
-    };
-
-    // Calculate centering for the banner
-    int banner_height = 9;
-    int banner_width = 44; 
-    int start_y = 2;
-    int start_x = (win_width - banner_width) / 2;
-    
-    // Clear the window before drawing
+    // Clear the window
     wclear(main_win_);
     box(main_win_, 0, 0);
+    
+    // ASCII art banner for PeerPulse
+    const char* banner[] = {
+        "$$$$$$$\\                                $$$$$$$\\            $$\\                 ",
+        "$$  __$$\\                               $$  __$$\\           $$ |                ",
+        "$$ |  $$ | $$$$$$\\   $$$$$$\\   $$$$$$\\  $$ |  $$ |$$\\   $$\\ $$ | $$$$$$$\\  $$$$$$\\  ",
+        "$$$$$$$  |$$  __$$\\ $$  __$$\\ $$  __$$\\ $$$$$$$  |$$ |  $$ |$$ |$$  _____|$$  __$$\\ ",
+        "$$  ____/ $$$$$$$$ |$$$$$$$$ |$$ |  \\__|$$  ____/ $$ |  $$ |$$ |\\$$$$$$\\  $$$$$$$$ |",
+        "$$ |      $$   ____|$$   ____|$$ |      $$ |      $$ |  $$ |$$ | \\____$$\\ $$   ____|",
+        "$$ |      \\$$$$$$$\\ \\$$$$$$$\\ $$ |      $$ |      \\$$$$$$  |$$ |$$$$$$$  |\\$$$$$$$\\ ",
+        "\\__|       \\_______| \\_______|\\___|      \\___|       \\______/ \\__|\\_______/  \\_______|",
+        "                                                                                  ",
+        "                  DISTRIBUTED COMPUTING PLATFORM                                  ",
+        "                                                                                  "
+    };
+    
+    // Calculate dimensions and position for the banner
+    int banner_height = 11;
+    int banner_width = 74;
+    int start_y = 2;
+    int start_x = (win_width - banner_width) / 2;
     
     // Draw the banner
     wattron(main_win_, COLOR_PAIR(3) | A_BOLD);
@@ -166,103 +230,86 @@ void TUI::render_main_interface() {
     }
     wattroff(main_win_, COLOR_PAIR(3) | A_BOLD);
     
-    // Client window (left 30%) - adjusted position to be below the banner
+    // Calculate positions for client and status windows
     int client_start_y = start_y + banner_height + 2;
     int client_width = (win_width - 4) * 0.3;
     int client_height = getmaxy(main_win_) - client_start_y - 4;
     
-    // Check if there's enough space for client window
+    // Ensure minimum height
     if (client_height < 5) {
-        // Not enough vertical space, use simpler layout
         client_height = 5;
         client_start_y = getmaxy(main_win_) - client_height - 3;
     }
     
-    // Recreate client window with new position
+    // Create client window
     if (client_win_) delwin(client_win_);
     client_win_ = derwin(main_win_, client_height, client_width, client_start_y, 2);
     box(client_win_, 0, 0);
     
-    // Status window (right 70%) - adjusted position to be below the banner
+    // Create status window
     int status_width = (win_width - 4) * 0.7 - 2;
     if (status_win_) delwin(status_win_);
     status_win_ = derwin(main_win_, client_height, status_width, client_start_y, client_width + 4);
     box(status_win_, 0, 0);
     
-    // Client list
-    wattron(client_win_, COLOR_PAIR(3));
+    // Client list header
+    wattron(client_win_, COLOR_PAIR(3) | A_BOLD);
     mvwprintw(client_win_, 1, 1, "Connected Clients:");
-    wattroff(client_win_, COLOR_PAIR(3));
+    wattroff(client_win_, COLOR_PAIR(3) | A_BOLD);
     
+    // List clients
     for (size_t i = 0; i < clients_.size() && i < (size_t)client_height - 4; ++i) {
         mvwprintw(client_win_, 3 + i, 1, "%s", clients_[i].c_str());
     }
     
-    // Status window
-    wattron(status_win_, COLOR_PAIR(3));
+    // Status window header
+    wattron(status_win_, COLOR_PAIR(3) | A_BOLD);
     mvwprintw(status_win_, 1, 1, "Server Socket: %s", socket_address_.c_str());
-    wattroff(status_win_, COLOR_PAIR(3));
+    wattroff(status_win_, COLOR_PAIR(3) | A_BOLD);
     
-    // Help text
-    mvwprintw(main_win_, getmaxy(main_win_) - 2, 2, "Press 'a' to add client, 's' to view script, 'q' to quit");
+    // Help text at bottom
+    mvwprintw(main_win_, getmaxy(main_win_) - 2, 2, "Press 's' to view script, 'q' to quit");
     
     // Main window title
     wattron(main_win_, A_BOLD);
     mvwprintw(main_win_, 0, (win_width - 12) / 2, " PeerPulse ");
     wattroff(main_win_, A_BOLD);
     
+    // Refresh all windows
     wrefresh(main_win_);
     wrefresh(client_win_);
     wrefresh(status_win_);
-    update_panels();
-    doupdate();
 }
 
-void TUI::add_dummy_client() {
-    static int counter = 3;
-    clients_.push_back("Worker Node " + std::to_string(counter) + 
-                      " (192.168.1." + std::to_string(100 + counter) + 
-                      ":808" + std::to_string(counter) + ")");
-    counter++;
-    render_main_interface();
+// Update the status message in the status window
+void TUI::update_status(const std::string& status) {
+    if (!status_win_) return;
+    
+    // Clear the second line of the status window
+    wmove(status_win_, 2, 1);
+    wclrtoeol(status_win_);
+    
+    // Display the new status message
+    mvwprintw(status_win_, 2, 1, "Status: %s", status.c_str());
+    wrefresh(status_win_);
 }
 
-void TUI::handle_input() {
-    int ch;
-    while ((ch = getch()) != 'q') {
-        switch (ch) {
-            case '\n':
-            case KEY_ENTER:
-                if (intro_win_) {
-                    destroy_intro_screen();
-                    create_main_interface();
-                }
-                break;
-            case 'a':
-                if (!intro_win_) {
-                    add_dummy_client();
-                }
-                break;
-            case 's':
-                if (!intro_win_) {
-                    show_script_viewer();
-                }
-                break;
-        }
-    }
-}
-
+// Display the script viewer screen
 void TUI::show_script_viewer() {
-    // Save current main window state
+    // Save main window state
     PANEL* saved_panel = main_panel_;
     WINDOW* saved_win = main_win_;
     
-    // Create new full-screen window for script view
+    // Create fullscreen window for script viewer
     int height = term_height_ - 2;
     int width = term_width_ - 2;
     WINDOW* script_win = newwin(height, width, 1, 1);
     PANEL* script_panel = new_panel(script_win);
     
+    // Enable special keys
+    keypad(script_win, TRUE);
+    
+    // Add border
     box(script_win, 0, 0);
     
     // Sample script content
@@ -292,31 +339,33 @@ void TUI::show_script_viewer() {
         "peerpulse_monitor --interval 5",
     };
     
-    // Display the script content
-    wattron(script_win, COLOR_PAIR(3));
+    // Display script title
+    wattron(script_win, COLOR_PAIR(3) | A_BOLD);
     mvwprintw(script_win, 1, 2, "PeerPulse Network Setup Script");
-    wattroff(script_win, COLOR_PAIR(3));
+    wattroff(script_win, COLOR_PAIR(3) | A_BOLD);
     
+    // Display script content
     for (size_t i = 0; i < script_lines.size() && i < (size_t)height - 5; ++i) {
         mvwprintw(script_win, 3 + i, 2, "%s", script_lines[i].c_str());
     }
     
-    // Add title
+    // Add window title
     wattron(script_win, A_BOLD);
     mvwprintw(script_win, 0, (width - 18) / 2, " Script Viewer ");
     wattroff(script_win, A_BOLD);
     
-    // Add footer
-    mvwprintw(script_win, height - 2, 2, "Press any key to return");
+    // Add footer with instructions
+    mvwprintw(script_win, height - 2, 2, "Press any key to return to main interface");
     
+    // Refresh the window and panel
     wrefresh(script_win);
     update_panels();
     doupdate();
     
     // Wait for a key press
-    getch();
+    wgetch(script_win);
     
-    // Clean up and restore original window
+    // Clean up
     del_panel(script_panel);
     delwin(script_win);
     
@@ -327,7 +376,35 @@ void TUI::show_script_viewer() {
     doupdate();
 }
 
+// Main application loop
 void TUI::run() {
+    // Start with the intro screen
     create_intro_screen();
-    handle_input();
+    
+    // Main event loop
+    bool should_exit = false;
+    while (!should_exit) {
+        // Get user input
+        int ch;
+        if (intro_win_) {
+            ch = wgetch(intro_win_);
+        } else {
+            ch = wgetch(main_win_);
+        }
+        
+        // Handle input
+        if (ch == 'q' && !intro_win_) {
+            should_exit = true;
+        } else if (ch == KEY_ENTER || ch == '\n') {
+            if (intro_win_) {
+                destroy_intro_screen();
+                create_main_interface();
+            }
+        } else if (ch == 's' && !intro_win_) {
+            show_script_viewer();
+        }
+    }
+    
+    // Clean up before exiting
+    cleanup_resources();
 }

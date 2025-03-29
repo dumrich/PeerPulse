@@ -1,6 +1,11 @@
 cmake_minimum_required(VERSION 3.12)
 project(PeerPulse LANGUAGES CXX)
 
+# Set policy for FindBoost module deprecation (resolves CMP0167 warning)
+if(POLICY CMP0167)
+  cmake_policy(SET CMP0167 NEW)
+endif()
+
 find_library(CURSES_NCURSES_LIBRARY ncurses)
 find_library(CURSES_PANEL_LIBRARY panel)
 
