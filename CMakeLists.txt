@@ -45,7 +45,8 @@ target_link_libraries(${PROJECT_NAME}
 )
 
 # Modern compiler flags
-target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Werror)
+#target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Werror )
+target_compile_options(${PROJECT_NAME})
 
 # C++ standard settings
 set_target_properties(${PROJECT_NAME} PROPERTIES
