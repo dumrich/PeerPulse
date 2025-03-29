@@ -38,4 +38,5 @@ private:
     void render_main_interface();
     void add_dummy_client();
     void handle_input();
+    void show_script_viewer();
 };
