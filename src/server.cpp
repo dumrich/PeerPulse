@@ -8,8 +8,12 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <net/if.h> 
+#include <string.h>
 
-PeerServer::PeerServer(TUI &interface) : interface(interface){};
+PeerServer::PeerServer(TUI &interface) : interface(interface) {
+    // Set up the TUI to monitor our client list
+    interface.set_server_ref(this, &_clients_mutex, &_clients_cond, &_clients);
+}
 
 // Function to print the actual bound address
 void print_bound_address(int sockfd) {
@@ -109,6 +113,8 @@ int PeerServer::start_socket() {
         exit(EXIT_FAILURE);
     }
 
+    print_bound_address(sock_fd);
+
     while (1) {
         Client c;
         if ((c.client_fd = accept(sock_fd, (struct sockaddr*)&c.address, &c.length)) < 0) {
@@ -117,13 +123,17 @@ int PeerServer::start_socket() {
         }
         
         printf("Connection accepted from %s:%d\n", 
-               inet_ntoa(address.sin_addr), ntohs(address.sin_port));
-
-        _clients.push_back(c);
-        pthread_cond_signal(&_clients_cond);
+               inet_ntoa(c.address.sin_addr), ntohs(c.address.sin_port));
         
+        // Thread-safe update of server's client list
+        pthread_mutex_lock(&_clients_mutex);
+        c.id = num_clients++;  // Assign a client ID
+        _clients.push_back(c);
+        
+        // Signal the condition variable - the TUI is listening to this
+        pthread_cond_signal(&_clients_cond);
+        pthread_mutex_unlock(&_clients_mutex);
     }
-    
 }
 
 void PeerServer::run() {
@@ -131,7 +141,7 @@ void PeerServer::run() {
     
     // Run the TUI in the main thread
     interface.run();
+
+    //pthread_join(socket_thread, nullptr);
     
-    // Join the socket thread when TUI exits
-    pthread_join(socket_thread, nullptr);
 }

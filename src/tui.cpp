@@ -1,7 +1,12 @@
 #include <string>
 #include <ncurses.h>
 #include <locale.h>
+#include <arpa/inet.h>  // For inet_ntoa and related functions
+#include <time.h>       // For clock_gettime
+#include <errno.h>      // For ETIMEDOUT
 #include "tui.h"
+#include "server.h"
+#include "client.h"
 
 
 TUI::TUI() : intro_win_(nullptr), main_win_(nullptr), client_win_(nullptr), 
@@ -13,13 +18,29 @@ TUI::TUI() : intro_win_(nullptr), main_win_(nullptr), client_win_(nullptr),
     
     socket_address_ = "0.0.0.0:8080";
     
-    // Add some dummy clients
+    // Thread-safe initialization of client list with just the server
+    pthread_mutex_lock(&clients_mutex);
     clients_.push_back("Main Server (192.168.1.100:8080)");
-    clients_.push_back("Worker Node 1 (192.168.1.101:8081)");
-    clients_.push_back("Worker Node 2 (192.168.1.102:8082)");
+    pthread_mutex_unlock(&clients_mutex);
 }
 
 TUI::~TUI() {
+    // Stop the client monitor thread if running
+    if (monitor_running) {
+        // Signal to the monitor thread that it should exit
+        monitor_running = false;
+        
+        // Wake up the monitor thread if it's waiting on the condition variable
+        if (server_clients_mutex && server_clients_cond) {
+            pthread_mutex_lock(server_clients_mutex);
+            pthread_cond_signal(server_clients_cond);
+            pthread_mutex_unlock(server_clients_mutex);
+        }
+        
+        // Wait for the monitor thread to exit
+        pthread_join(client_monitor_thread, nullptr);
+    }
+    
     // Lock mutex for ncurses cleanup
     pthread_mutex_lock(&ncurses_mutex);
     
@@ -35,8 +56,86 @@ TUI::~TUI() {
     // Unlock before destroying mutex
     pthread_mutex_unlock(&ncurses_mutex);
     
-    // Destroy the mutex
+    // Destroy the mutexes
     pthread_mutex_destroy(&ncurses_mutex);
+    pthread_mutex_destroy(&clients_mutex);
+}
+
+void TUI::set_server_ref(PeerServer* server, pthread_mutex_t* clients_mutex, 
+                       pthread_cond_t* clients_cond, std::vector<Client>* clients) {
+    server_ref = server;
+    server_clients_mutex = clients_mutex;
+    server_clients_cond = clients_cond;
+    server_clients = clients;
+    
+    // Start the client monitor thread
+    monitor_running = true;
+    pthread_create(&client_monitor_thread, nullptr, &TUI::client_monitor_thread_fn, this);
+}
+
+void* TUI::client_monitor_thread_fn(void* arg) {
+    TUI* tui = static_cast<TUI*>(arg);
+    tui->monitor_clients();
+    return nullptr;
+}
+
+void TUI::monitor_clients() {
+    // Check that we have valid server references
+    if (!server_clients_mutex || !server_clients_cond || !server_clients) {
+        printf("Error: Server references not properly set for client monitoring\n");
+        return;
+    }
+    
+    while (monitor_running) {
+        // Lock the server's clients mutex
+        pthread_mutex_lock(server_clients_mutex);
+        
+        // Wait for the condition to be signaled, but with a timeout to check monitor_running
+        struct timespec timeout;
+        clock_gettime(CLOCK_REALTIME, &timeout);
+        timeout.tv_sec += 1; // 1 second timeout
+        
+        // Wait for condition with timeout to periodically check monitor_running
+        while (monitor_running && server_clients->size() == last_client_count) {
+            int ret = pthread_cond_timedwait(server_clients_cond, server_clients_mutex, &timeout);
+            if (ret == ETIMEDOUT) {
+                // Timeout occurred, refresh timeout and continue waiting if still running
+                if (!monitor_running) break;
+                clock_gettime(CLOCK_REALTIME, &timeout);
+                timeout.tv_sec += 1;
+            } else {
+                // Condition was signaled, break the wait loop
+                break;
+            }
+        }
+        
+        // Check if we should exit
+        if (!monitor_running) {
+            pthread_mutex_unlock(server_clients_mutex);
+            break;
+        }
+        
+        // Process any new clients
+        for (size_t i = last_client_count; i < server_clients->size(); ++i) {
+            const Client& client = (*server_clients)[i];
+            
+            // Format client info
+            char client_info[100];
+            snprintf(client_info, sizeof(client_info), "Client %zu (%s:%d)", 
+                     i, 
+                     inet_ntoa(client.address.sin_addr), 
+                     ntohs(client.address.sin_port));
+            
+            // Add the client to the TUI
+            add_client(client_info);
+        }
+        
+        // Update our count
+        last_client_count = server_clients->size();
+        
+        // Unlock the server's clients mutex
+        pthread_mutex_unlock(server_clients_mutex);
+    }
 }
 
 void TUI::init_ncurses() {
@@ -218,9 +317,12 @@ void TUI::render_main_interface() {
     mvwprintw(client_win_, 1, 1, "Connected Clients:");
     wattroff(client_win_, COLOR_PAIR(3));
     
+    // Thread-safe access to clients_ vector
+    pthread_mutex_lock(&clients_mutex);
     for (size_t i = 0; i < clients_.size() && i < (size_t)client_height - 4; ++i) {
         mvwprintw(client_win_, 3 + i, 1, "%s", clients_[i].c_str());
     }
+    pthread_mutex_unlock(&clients_mutex);
     
     // Status window
     wattron(status_win_, COLOR_PAIR(3));
@@ -246,12 +348,26 @@ void TUI::render_main_interface() {
 }
 
 void TUI::add_dummy_client() {
-    static int counter = 3;
-    clients_.push_back("Worker Node " + std::to_string(counter) + 
-                      " (192.168.1." + std::to_string(100 + counter) + 
-                      ":808" + std::to_string(counter) + ")");
+    static int counter = 1;
+    std::string new_client = "Worker Node " + std::to_string(counter) + 
+                         " (192.168.1." + std::to_string(100 + counter) + 
+                         ":808" + std::to_string(counter) + ")";
+    
+    // Use the add_client method to ensure thread safety
+    add_client(new_client);
     counter++;
-    render_main_interface();
+}
+
+void TUI::add_client(const std::string& client_info) {
+    // Thread-safe access to clients_ vector
+    pthread_mutex_lock(&clients_mutex);
+    clients_.push_back(client_info);
+    pthread_mutex_unlock(&clients_mutex);
+    
+    // If we're on the main interface, update it to show the new client
+    if (in_main) {
+        render_main_interface();
+    }
 }
 
 void TUI::handle_input() {
@@ -276,7 +392,7 @@ void TUI::handle_input() {
                 if (!intro_win_) {
                     // Temporarily unlock mutex for complex operation
                     pthread_mutex_unlock(&ncurses_mutex);
-                    add_dummy_client();
+                    render_main_interface();
                     pthread_mutex_lock(&ncurses_mutex);
                 }
                 break;
@@ -291,6 +407,9 @@ void TUI::handle_input() {
                 break;
         }
     }
+    
+    // User pressed 'q' to quit
+    printf("Quitting application...\n");
     
     // Unlock mutex before exit
     pthread_mutex_unlock(&ncurses_mutex);

@@ -34,6 +34,11 @@ public:
     PeerServer(TUI &interface);
     void addFile(std::string& file_name);
 
+    // Methods to expose client list and synchronization primitives
+    pthread_mutex_t* get_clients_mutex() { return &_clients_mutex; }
+    pthread_cond_t* get_clients_cond() { return &_clients_cond; }
+    std::vector<Client>* get_clients() { return &_clients; }
+
     static void *socket_thread_fn(void *v) {
         PeerServer* app = static_cast<PeerServer*>(v);
         app->start_socket();
