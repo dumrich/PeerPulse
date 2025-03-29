@@ -4,6 +4,7 @@
 #include <panel.h>
 #include <vector>
 #include <string>
+#include <pthread.h>
 
 class TUI {
 public:
@@ -11,6 +12,8 @@ public:
     ~TUI();
     
     void run();
+
+    bool in_main = false;
     
 private:
     // Window and panel pointers
@@ -28,6 +31,9 @@ private:
     // Dimensions
     int term_height_;
     int term_width_;
+    
+    // Thread synchronization
+    pthread_mutex_t ncurses_mutex = PTHREAD_MUTEX_INITIALIZER;
     
     // Private methods
     void init_ncurses();

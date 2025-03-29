@@ -25,6 +25,8 @@ private:
 
     TUI &interface;
 
+    int num_clients = 0;
+    
     FILE *file;
     char* _script_buf;
     

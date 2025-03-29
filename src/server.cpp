@@ -119,6 +119,7 @@ int PeerServer::start_socket() {
         printf("Connection accepted from %s:%d\n", 
                inet_ntoa(address.sin_addr), ntohs(address.sin_port));
 
+        _clients.push_back(c);
         pthread_cond_signal(&_clients_cond);
         
     }
@@ -127,5 +128,10 @@ int PeerServer::start_socket() {
 
 void PeerServer::run() {
     pthread_create(&socket_thread, nullptr, &PeerServer::socket_thread_fn, this);
+    
+    // Run the TUI in the main thread
+    interface.run();
+    
+    // Join the socket thread when TUI exits
     pthread_join(socket_thread, nullptr);
 }

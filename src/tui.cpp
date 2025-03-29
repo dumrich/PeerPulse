@@ -4,8 +4,13 @@
 #include "tui.h"
 
 
-TUI::TUI() {
-        //init_ncurses();
+TUI::TUI() : intro_win_(nullptr), main_win_(nullptr), client_win_(nullptr), 
+             status_win_(nullptr), intro_panel_(nullptr), main_panel_(nullptr) {
+    // Lock the mutex before initializing ncurses
+    pthread_mutex_lock(&ncurses_mutex);
+    init_ncurses();
+    pthread_mutex_unlock(&ncurses_mutex);
+    
     socket_address_ = "0.0.0.0:8080";
     
     // Add some dummy clients
@@ -15,13 +20,23 @@ TUI::TUI() {
 }
 
 TUI::~TUI() {
-    del_panel(intro_panel_);
-    del_panel(main_panel_);
-    delwin(intro_win_);
-    delwin(main_win_);
-    delwin(client_win_);
-    delwin(status_win_);
+    // Lock mutex for ncurses cleanup
+    pthread_mutex_lock(&ncurses_mutex);
+    
+    // Clean up ncurses resources
+    if (intro_panel_) del_panel(intro_panel_);
+    if (main_panel_) del_panel(main_panel_);
+    if (intro_win_) delwin(intro_win_);
+    if (main_win_) delwin(main_win_);
+    if (client_win_) delwin(client_win_);
+    if (status_win_) delwin(status_win_);
     endwin();
+    
+    // Unlock before destroying mutex
+    pthread_mutex_unlock(&ncurses_mutex);
+    
+    // Destroy the mutex
+    pthread_mutex_destroy(&ncurses_mutex);
 }
 
 void TUI::init_ncurses() {
@@ -59,6 +74,9 @@ void TUI::create_intro_screen() {
 }
 
 void TUI::render_intro_screen() {
+    // Lock the mutex before accessing ncurses
+    pthread_mutex_lock(&ncurses_mutex);
+    
     // Get window width directly
     int win_width = getmaxx(intro_win_);
     
@@ -97,6 +115,9 @@ void TUI::render_intro_screen() {
     wrefresh(intro_win_);
     update_panels();
     doupdate();
+    
+    // Unlock the mutex after finishing ncurses operations
+    pthread_mutex_unlock(&ncurses_mutex);
 }
 
 void TUI::destroy_intro_screen() {
@@ -129,6 +150,9 @@ void TUI::create_main_interface() {
 }
 
 void TUI::render_main_interface() {
+    // Lock the mutex before accessing ncurses
+    pthread_mutex_lock(&ncurses_mutex);
+    
     // Get window dimensions
     int win_width = getmaxx(main_win_);
     
@@ -216,6 +240,9 @@ void TUI::render_main_interface() {
     wrefresh(status_win_);
     update_panels();
     doupdate();
+    
+    // Unlock the mutex after finishing ncurses operations
+    pthread_mutex_unlock(&ncurses_mutex);
 }
 
 void TUI::add_dummy_client() {
@@ -228,28 +255,45 @@ void TUI::add_dummy_client() {
 }
 
 void TUI::handle_input() {
+    // Lock mutex for ncurses operations
+    pthread_mutex_lock(&ncurses_mutex);
+    
     int ch;
     while ((ch = getch()) != 'q') {
         switch (ch) {
             case '\n':
             case KEY_ENTER:
                 if (intro_win_) {
+                    // Temporarily unlock mutex for complex operation
+                    pthread_mutex_unlock(&ncurses_mutex);
                     destroy_intro_screen();
                     create_main_interface();
+                    pthread_mutex_lock(&ncurses_mutex);
+                    in_main=true;
                 }
                 break;
             case 'a':
                 if (!intro_win_) {
+                    // Temporarily unlock mutex for complex operation
+                    pthread_mutex_unlock(&ncurses_mutex);
                     add_dummy_client();
+                    pthread_mutex_lock(&ncurses_mutex);
                 }
                 break;
             case 's':
                 if (!intro_win_) {
+                    // Temporarily unlock mutex for complex operation
+                    pthread_mutex_unlock(&ncurses_mutex);
                     show_script_viewer();
+                    pthread_mutex_lock(&ncurses_mutex);
+                    in_main=false;
                 }
                 break;
         }
     }
+    
+    // Unlock mutex before exit
+    pthread_mutex_unlock(&ncurses_mutex);
 }
 
 void TUI::show_script_viewer() {
