@@ -1,8 +1,10 @@
 #include <iostream>
 #include <tui.h>
+#include <server.h>
 
 int main(int argc, char** argv) {
-  TUI tui;
-  tui.run();
-  return 0;
+    TUI tui;
+    PeerServer server (tui);
+    server.run();
+    return 0;
 }

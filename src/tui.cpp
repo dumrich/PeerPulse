@@ -5,7 +5,7 @@
 
 
 TUI::TUI() {
-    init_ncurses();
+        //init_ncurses();
     socket_address_ = "0.0.0.0:8080";
     
     // Add some dummy clients

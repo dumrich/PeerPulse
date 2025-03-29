@@ -4,6 +4,7 @@ project(PeerPulse LANGUAGES CXX)
 find_library(CURSES_NCURSES_LIBRARY ncurses)
 find_library(CURSES_PANEL_LIBRARY panel)
 
+find_package(Threads REQUIRED)
 
 # Find Boost packages (modify components as needed)
 find_package(Boost 1.71 REQUIRED 
@@ -42,6 +43,7 @@ target_link_libraries(${PROJECT_NAME}
     ${CURSES_NCURSES_LIBRARY}
     ${CURSES_PANEL_LIBRARY}
     ${Boost_LIBRARIES}
+    Threads::Threads
 )
 
 # Modern compiler flags
