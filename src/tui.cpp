@@ -1,7 +1,8 @@
-#include "../include/tui.h"
 #include <string>
 #include <ncurses.h>
 #include <locale.h>
+#include "tui.h"
+
 
 TUI::TUI() {
     init_ncurses();
