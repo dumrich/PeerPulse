@@ -25,22 +25,6 @@ TUI::TUI() : intro_win_(nullptr), main_win_(nullptr), client_win_(nullptr),
 }
 
 TUI::~TUI() {
-    // Stop the client monitor thread if running
-    if (monitor_running) {
-        // Signal to the monitor thread that it should exit
-        monitor_running = false;
-        
-        // Wake up the monitor thread if it's waiting on the condition variable
-        if (server_clients_mutex && server_clients_cond) {
-            pthread_mutex_lock(server_clients_mutex);
-            pthread_cond_signal(server_clients_cond);
-            pthread_mutex_unlock(server_clients_mutex);
-        }
-        
-        // Wait for the monitor thread to exit
-        pthread_join(client_monitor_thread, nullptr);
-    }
-    
     // Lock mutex for ncurses cleanup
     pthread_mutex_lock(&ncurses_mutex);
     
@@ -67,75 +51,37 @@ void TUI::set_server_ref(PeerServer* server, pthread_mutex_t* clients_mutex,
     server_clients_mutex = clients_mutex;
     server_clients_cond = clients_cond;
     server_clients = clients;
-    
-    // Start the client monitor thread
-    monitor_running = true;
-    pthread_create(&client_monitor_thread, nullptr, &TUI::client_monitor_thread_fn, this);
 }
 
-void* TUI::client_monitor_thread_fn(void* arg) {
-    TUI* tui = static_cast<TUI*>(arg);
-    tui->monitor_clients();
-    return nullptr;
-}
-
-void TUI::monitor_clients() {
+void TUI::check_for_new_clients() {
     // Check that we have valid server references
-    if (!server_clients_mutex || !server_clients_cond || !server_clients) {
-        printf("Error: Server references not properly set for client monitoring\n");
+    if (!server_clients_mutex || !server_clients) {
         return;
     }
     
-    while (monitor_running) {
-        // Lock the server's clients mutex
-        pthread_mutex_lock(server_clients_mutex);
+    // Lock the server's clients mutex
+    pthread_mutex_lock(server_clients_mutex);
+    
+    // Process any new clients
+    for (size_t i = last_client_count; i < server_clients->size(); ++i) {
+        const Client& client = (*server_clients)[i];
         
-        // Wait for the condition to be signaled, but with a timeout to check monitor_running
-        struct timespec timeout;
-        clock_gettime(CLOCK_REALTIME, &timeout);
-        timeout.tv_sec += 1; // 1 second timeout
+        // Format client info
+        char client_info[100];
+        snprintf(client_info, sizeof(client_info), "Client %zu (%s:%d)", 
+                 i, 
+                 inet_ntoa(client.address.sin_addr), 
+                 ntohs(client.address.sin_port));
         
-        // Wait for condition with timeout to periodically check monitor_running
-        while (monitor_running && server_clients->size() == last_client_count) {
-            int ret = pthread_cond_timedwait(server_clients_cond, server_clients_mutex, &timeout);
-            if (ret == ETIMEDOUT) {
-                // Timeout occurred, refresh timeout and continue waiting if still running
-                if (!monitor_running) break;
-                clock_gettime(CLOCK_REALTIME, &timeout);
-                timeout.tv_sec += 1;
-            } else {
-                // Condition was signaled, break the wait loop
-                break;
-            }
-        }
-        
-        // Check if we should exit
-        if (!monitor_running) {
-            pthread_mutex_unlock(server_clients_mutex);
-            break;
-        }
-        
-        // Process any new clients
-        for (size_t i = last_client_count; i < server_clients->size(); ++i) {
-            const Client& client = (*server_clients)[i];
-            
-            // Format client info
-            char client_info[100];
-            snprintf(client_info, sizeof(client_info), "Client %zu (%s:%d)", 
-                     i, 
-                     inet_ntoa(client.address.sin_addr), 
-                     ntohs(client.address.sin_port));
-            
-            // Add the client to the TUI
-            add_client(client_info);
-        }
-        
-        // Update our count
-        last_client_count = server_clients->size();
-        
-        // Unlock the server's clients mutex
-        pthread_mutex_unlock(server_clients_mutex);
+        // Add the client to the TUI
+        add_client(client_info);
     }
+    
+    // Update our count
+    last_client_count = server_clients->size();
+    
+    // Unlock the server's clients mutex
+    pthread_mutex_unlock(server_clients_mutex);
 }
 
 void TUI::init_ncurses() {
@@ -330,7 +276,7 @@ void TUI::render_main_interface() {
     wattroff(status_win_, COLOR_PAIR(3));
     
     // Help text
-    mvwprintw(main_win_, getmaxy(main_win_) - 2, 2, "Press 'a' to add client, 's' to view script, 'q' to quit");
+    mvwprintw(main_win_, getmaxy(main_win_) - 2, 2, "Press 'r' to start, Press 'a' to add client, 's' to view script, 'q' to quit");
     
     // Main window title
     wattron(main_win_, A_BOLD);
@@ -345,17 +291,6 @@ void TUI::render_main_interface() {
     
     // Unlock the mutex after finishing ncurses operations
     pthread_mutex_unlock(&ncurses_mutex);
-}
-
-void TUI::add_dummy_client() {
-    static int counter = 1;
-    std::string new_client = "Worker Node " + std::to_string(counter) + 
-                         " (192.168.1." + std::to_string(100 + counter) + 
-                         ":808" + std::to_string(counter) + ")";
-    
-    // Use the add_client method to ensure thread safety
-    add_client(new_client);
-    counter++;
 }
 
 void TUI::add_client(const std::string& client_info) {
@@ -392,6 +327,11 @@ void TUI::handle_input() {
                 if (!intro_win_) {
                     // Temporarily unlock mutex for complex operation
                     pthread_mutex_unlock(&ncurses_mutex);
+                    
+                    // Check for new clients when 'a' is pressed
+                    check_for_new_clients();
+                    
+                    // Refresh the main interface to show new clients
                     render_main_interface();
                     pthread_mutex_lock(&ncurses_mutex);
                 }
@@ -416,6 +356,9 @@ void TUI::handle_input() {
 }
 
 void TUI::show_script_viewer() {
+    // Lock ncurses mutex for thread safety
+    pthread_mutex_lock(&ncurses_mutex);
+    
     // Save current main window state
     PANEL* saved_panel = main_panel_;
     WINDOW* saved_win = main_win_;
@@ -428,40 +371,46 @@ void TUI::show_script_viewer() {
     
     box(script_win, 0, 0);
     
-    // Sample script content
-    std::vector<std::string> script_lines = {
-        "#!/bin/bash",
-        "",
-        "# PeerPulse Network Setup Script",
-        "# Configures the distributed computing environment",
-        "",
-        "echo \"Setting up PeerPulse distributed network...\"",
-        "",
-        "# Start the main server",
-        "echo \"Starting main server on port 8080...\"",
-        "peerpulse_server --port 8080 --workers 4 &",
-        "",
-        "# Initialize worker nodes",
-        "for i in {1..3}; do",
-        "    echo \"Starting worker node $i on port 808$i...\"",
-        "    peerpulse_worker --master 192.168.1.100:8080 --port 808$i --id worker$i &",
-        "done",
-        "",
-        "echo \"PeerPulse network setup complete!\"",
-        "echo \"Main server: 192.168.1.100:8080\"",
-        "echo \"Workers: 3 nodes initialized\"",
-        "",
-        "# Monitor network status",
-        "peerpulse_monitor --interval 5",
-    };
+    // Sample script content as char* buffer
+    const char* script_content = server_ref->_script_buf;
     
     // Display the script content
     wattron(script_win, COLOR_PAIR(3));
     mvwprintw(script_win, 1, 2, "PeerPulse Network Setup Script");
     wattroff(script_win, COLOR_PAIR(3));
     
-    for (size_t i = 0; i < script_lines.size() && i < (size_t)height - 5; ++i) {
-        mvwprintw(script_win, 3 + i, 2, "%s", script_lines[i].c_str());
+    // Parse and display the buffer line by line
+    int current_line = 3;
+    const char* start = script_content;
+    const char* end = strchr(start, '\n');
+    
+    while (end != nullptr && current_line < height - 2) {
+        // Calculate line length (without the newline)
+        int line_length = end - start;
+        
+        // Truncate if line is too long for window
+        int max_line_length = width - 4; // 2 chars padding on each side
+        if (line_length > max_line_length) {
+            line_length = max_line_length;
+        }
+        
+        // Print the line (using %.*s to specify max length)
+        mvwprintw(script_win, current_line, 2, "%.*s", line_length, start);
+        
+        // Move to next line
+        current_line++;
+        start = end + 1; // Skip the newline
+        end = strchr(start, '\n');
+    }
+    
+    // Print any remaining content after last newline
+    if (start != nullptr && *start != '\0' && current_line < height - 2) {
+        int remaining_length = strlen(start);
+        int max_line_length = width - 4;
+        if (remaining_length > max_line_length) {
+            remaining_length = max_line_length;
+        }
+        mvwprintw(script_win, current_line, 2, "%.*s", remaining_length, start);
     }
     
     // Add title
@@ -488,6 +437,9 @@ void TUI::show_script_viewer() {
     update_panels();
     wrefresh(saved_win);
     doupdate();
+    
+    // Unlock ncurses mutex
+    pthread_mutex_unlock(&ncurses_mutex);
 }
 
 void TUI::run() {

@@ -67,16 +67,18 @@ long get_file_size(FILE* file) {
 void PeerServer::addFile(std::string &file_name) {
         long file_size;
         size_t read;
-        file = fopen(file_name.c_str(), "w");
+        file = fopen(file_name.c_str(), "r");
         if (file == NULL) {
             perror("Error opening file.");
             return;
         }
 
         file_size = get_file_size(file);
-        char *files = new char[file_size];
+        char *files = new char[file_size + 1];
         read = fread(files, sizeof(char), file_size, file);
+        printf("hi %lu\n",read);
         _script_buf = files;
+        puts(_script_buf);
 }
 
 int PeerServer::start_socket() {
@@ -142,6 +144,6 @@ void PeerServer::run() {
     // Run the TUI in the main thread
     interface.run();
 
-    //pthread_join(socket_thread, nullptr);
+    pthread_cancel(socket_thread);
     
 }

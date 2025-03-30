@@ -47,20 +47,15 @@ private:
     pthread_mutex_t ncurses_mutex = PTHREAD_MUTEX_INITIALIZER;
     pthread_mutex_t clients_mutex = PTHREAD_MUTEX_INITIALIZER;
     
-    // Client monitor thread
-    pthread_t client_monitor_thread;
-    bool monitor_running = false;
-    
-    // Server references for client monitoring
+    // Server references for client checking
     PeerServer* server_ref = nullptr;
     pthread_mutex_t* server_clients_mutex = nullptr;
     pthread_cond_t* server_clients_cond = nullptr;
     std::vector<Client>* server_clients = nullptr;
     size_t last_client_count = 0;
     
-    // Thread function for client monitoring
-    static void* client_monitor_thread_fn(void* arg);
-    void monitor_clients();
+    // Method to check for new clients on demand
+    void check_for_new_clients();
     
     // Private methods
     void init_ncurses();
@@ -69,7 +64,6 @@ private:
     void destroy_intro_screen();
     void render_intro_screen();
     void render_main_interface();
-    void add_dummy_client();
     void handle_input();
     void show_script_viewer();
 };

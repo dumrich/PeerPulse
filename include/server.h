@@ -28,9 +28,9 @@ private:
     int num_clients = 0;
     
     FILE *file;
-    char* _script_buf;
     
 public:
+    char* _script_buf;
     PeerServer(TUI &interface);
     void addFile(std::string& file_name);
 
