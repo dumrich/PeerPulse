@@ -56,6 +56,7 @@ public:
     
     int start_socket();
     int send_files();
+    int recv_output();
 
     void run();
 

@@ -1,82 +1,42 @@
-import socket
-import tempfile
 import os
-import subprocess
-import struct
 
-PAGE_SIZE = 4096
+def create_matrix(matrix_id):
+    """Create a 10x10 matrix with predictable values based on matrix_id"""
+    return [[(i + j + matrix_id) % 9 + 1 for j in range(10)] for i in range(10)]
 
-def get_server_address():
-    """Prompt user for server address and port"""
-    server = "100.110.118.91"
-    port = input("Enter server port (default 8000): ") or "8000"
-    return (server, int(port))
+def matrix_multiply(a, b):
+    """Naive matrix multiplication"""
+    return [[sum(a[i][k] * b[k][j] for k in range(10)) for j in range(10)] for i in range(10)]
+
+def matrix_power(matrix, power):
+    """Raise matrix to the specified power"""
+    result = matrix
+    for _ in range(power - 1):
+        result = matrix_multiply(result, matrix)
+    return result
+
+def print_matrix(matrix, matrix_id):
+    """Print a matrix with its ID"""
+    print(f"\nMatrix {matrix_id} to the 10th power (first row):")
+    print(matrix[0])  # Show just first row for brevity
 
 def main():
-    # Get server address from user
-    ADDR = get_server_address()
-    print(f"Connecting to {ADDR[0]}:{ADDR[1]}...")
-
-    # Create socket and connect
-    client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    client.connect(ADDR)
-    print("Connected to server")
-
-    # Receive data from server
-    print("Waiting for data from server...")
-    received_data = client.recv(PAGE_SIZE * 2)  # Adjust buffer size as needed
-    
-    if not received_data:
-        print("No data received from server")
+    # Get bounds from environment
+    try:
+        lower = int(os.getenv('PROCESS_BOUND_LOWER', 0))
+        upper = int(os.getenv('PROCESS_BOUND_UPPER', 9))
+    except ValueError:
+        print("Error: Bounds must be integers")
         return
 
-    # Get the bounds values
-    val2 = [int(x) for x in str(client.recv(15).decode("ascii")).split(" ")]
-    print(f"Received bounds: {val2}")
 
-    # Create temp file
-    with tempfile.NamedTemporaryFile(mode='w+b', suffix='.py', delete=False) as temp_file:
-        temp_file.write(received_data)
-        temp_file_path = temp_file.name
-        print(f"Created temp file: {temp_file_path}")
+    # Create 9 hardcoded 10x10 matrices
+    matrices = [create_matrix(i) for i in range(10)]
 
-    # Prepare environment variables
-    env = os.environ.copy()
-    env.update({
-        'PROCESS_BOUND_LOWER': str(val2[0]),
-        'PROCESS_BOUND_UPPER': str(val2[1])
-    })
-
-    # Run the script as subprocess
-    try:
-        print("\nExecuting received script...")
-        result = subprocess.run(
-            ['python3', temp_file_path],
-            env=env,
-            capture_output=True,
-            text=True,
-            check=True
-        )
-        
-        print("\nScript output:")
-        print(result.stdout)
-        
-        if result.stderr:
-            print("\nScript errors:")
-            print(result.stderr)
-
-    except subprocess.CalledProcessError as e:
-        print(f"\nScript failed with error: {e}")
-        print(f"Return code: {e.returncode}")
-        print(f"Output: {e.stdout}")
-        print(f"Errors: {e.stderr}")
-    finally:
-        # Clean up temp file
-        try:
-            os.unlink(temp_file_path)
-            print(f"\nRemoved temp file: {temp_file_path}")
-        except OSError as e:
-            print(f"\nError removing temp file: {e}")
+    # Raise each matrix to the 10th power within bounds
+    for i in range(lower, min(upper, len(matrices))):
+        powered_matrix = matrix_power(matrices[i], 10)
+        print_matrix(powered_matrix, i)
 
 if __name__ == "__main__":
     main()

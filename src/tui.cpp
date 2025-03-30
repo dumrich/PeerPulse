@@ -477,6 +477,7 @@ void TUI::distribute_network() {
         if (err != 0) {
                 exit(-1);
         }
+        err = server_ref->recv_output();
     } else {
         add_status_message("Could not access server");
         add_status_message("Network distribution could not be started");

@@ -174,10 +174,15 @@ int PeerServer::send_files() {
         status_message = "Sent file for client " + std::to_string(i) + "\n";
         interface.add_status_message(status_message);
         bounds = std::to_string(set.first) + " " + std::to_string(set.second);
+        interface.add_status_message("Computing bounds " + bounds);
         _clients[i].send_buf(bounds.c_str(), bounds.size());
     }
     pthread_mutex_unlock(&_clients_mutex);
     return 0;
+}
+
+int PeerServer::recv_output() {
+  return 0;
 }
 
 void PeerServer::run() {

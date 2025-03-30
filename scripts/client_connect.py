@@ -61,9 +61,6 @@ def main():
         print("\nScript output:")
         print(result.stdout)
         
-        if result.stderr:
-            print("\nScript errors:")
-            print(result.stderr)
 
     except subprocess.CalledProcessError as e:
         print(f"\nScript failed with error: {e}")
