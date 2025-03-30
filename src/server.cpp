@@ -13,6 +13,7 @@
 #include <net/if.h> 
 #include <string.h>
 #include <utility>
+#include <fcntl.h>
 
 PeerServer::PeerServer(TUI &interface) : interface(interface) {
     // Set up the TUI to monitor our client list
@@ -202,21 +203,80 @@ void write_buffer_to_file(const char* filename, const char* buffer, size_t buffe
 }
 
 int PeerServer::recv_output() {
-
-    constexpr size_t outbuf_size = 4096*8;
+    constexpr size_t outbuf_size = 4096*10;
     char* output_buf = new char[outbuf_size];
+    
+    interface.add_status_message("Receiving output from clients...");
 
     for (int i = 0; i < num_clients; i++) {
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
-
-        pthread_mutex_lock(&_clients_mutex);
-        size_t data = _clients[i].recv_buf(output_buf, outbuf_size);
-        pthread_mutex_unlock(&_clients_mutex);
-        write_buffer_to_file("out.txt", output_buf, data);
+        interface.add_status_message("Reading output from client " + std::to_string(i));
         
+        size_t total_received = 0;
+        bool more_data = true;
+        
+        // Continue receiving until no more data or connection closed
+        while (more_data) {
+            pthread_mutex_lock(&_clients_mutex);
+            
+            // Check if client connection is still valid
+            if (i >= _clients.size() || _clients[i].client_fd < 0) {
+                interface.add_status_message("Client " + std::to_string(i) + " connection closed");
+                pthread_mutex_unlock(&_clients_mutex);
+                break;
+            }
+            
+            // Set non-blocking mode to check for more data
+            int flags = fcntl(_clients[i].client_fd, F_GETFL, 0);
+            fcntl(_clients[i].client_fd, F_SETFL, flags | O_NONBLOCK);
+            
+            // Try to receive data
+            ssize_t received = recv(_clients[i].client_fd, output_buf, outbuf_size, 0);
+            
+            // Restore blocking mode
+            fcntl(_clients[i].client_fd, F_SETFL, flags);
+            
+            if (received > 0) {
+                // Got data, write it to file
+                pthread_mutex_unlock(&_clients_mutex);
+                write_buffer_to_file("out.txt", output_buf, received);
+                total_received += received;
+                interface.add_status_message("Received " + std::to_string(received) + " bytes from client " + std::to_string(i));
+            }
+            else if (received == 0) {
+                // Connection closed
+                interface.add_status_message("Client " + std::to_string(i) + " connection closed");
+                pthread_mutex_unlock(&_clients_mutex);
+                more_data = false;
+            }
+            else {
+                // No data available or error
+                if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                    // No more data available right now
+                    pthread_mutex_unlock(&_clients_mutex);
+                    
+                    // If we've received anything, break and consider it complete
+                    if (total_received > 0) {
+                        more_data = false;
+                    } else {
+                        // Wait a bit and try again
+                        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                    }
+                } 
+                else {
+                    // Actual error
+                    interface.add_status_message("Error receiving from client " + std::to_string(i) + ": " + strerror(errno));
+                    pthread_mutex_unlock(&_clients_mutex);
+                    more_data = false;
+                }
+            }
+        }
+        
+        interface.add_status_message("Total received from client " + std::to_string(i) + ": " + std::to_string(total_received) + " bytes");
     }
+    
     delete[] output_buf;
-
+    interface.add_status_message("Finished receiving output from all clients");
     return 0;
 }
 
