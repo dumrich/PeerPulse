@@ -20,6 +20,9 @@ public:
     // Add a new client to the TUI's client list
     void add_client(const std::string& client_info);
     
+    // Add a message to the status window
+    void add_status_message(const std::string& message);
+    
     // Set the server reference for client monitoring
     void set_server_ref(PeerServer* server, pthread_mutex_t* clients_mutex, 
                       pthread_cond_t* clients_cond, std::vector<Client>* clients);
@@ -38,6 +41,9 @@ private:
     // Client data
     std::vector<std::string> clients_;
     std::string socket_address_;
+    
+    // Status messages for the right panel
+    std::vector<std::string> status_messages_;
     
     // Dimensions
     int term_height_;
@@ -66,4 +72,6 @@ private:
     void render_main_interface();
     void handle_input();
     void show_script_viewer();
+
+    void distribute_network();
 };

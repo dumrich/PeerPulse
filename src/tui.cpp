@@ -268,12 +268,28 @@ void TUI::render_main_interface() {
     for (size_t i = 0; i < clients_.size() && i < (size_t)client_height - 4; ++i) {
         mvwprintw(client_win_, 3 + i, 1, "%s", clients_[i].c_str());
     }
-    pthread_mutex_unlock(&clients_mutex);
     
-    // Status window
+    // Status window header
     wattron(status_win_, COLOR_PAIR(3));
     mvwprintw(status_win_, 1, 1, "Server Socket: %s", socket_address_.c_str());
+    mvwprintw(status_win_, 2, 1, "Status Messages:");
     wattroff(status_win_, COLOR_PAIR(3));
+    
+    // Display status messages with scrolling
+    int max_messages = client_height - 6; // Leave room for header and border
+    int message_start_index = 0;
+    
+    // If we have more messages than can fit, calculate the starting index for scrolling
+    if (status_messages_.size() > (size_t)max_messages) {
+        message_start_index = status_messages_.size() - max_messages;
+    }
+    
+    // Display the messages
+    for (size_t i = 0; i < (size_t)max_messages && i + message_start_index < status_messages_.size(); ++i) {
+        mvwprintw(status_win_, 4 + i, 1, "%s", status_messages_[i + message_start_index].c_str());
+    }
+    
+    pthread_mutex_unlock(&clients_mutex);
     
     // Help text
     mvwprintw(main_win_, getmaxy(main_win_) - 2, 2, "Press 'r' to start, Press 'a' to add client, 's' to view script, 'q' to quit");
@@ -345,6 +361,11 @@ void TUI::handle_input() {
                     in_main=false;
                 }
                 break;
+            case 'r':
+                    pthread_mutex_unlock(&ncurses_mutex);
+                    distribute_network();
+                    pthread_mutex_lock(&ncurses_mutex);
+                    break;
         }
     }
     
@@ -440,6 +461,53 @@ void TUI::show_script_viewer() {
     
     // Unlock ncurses mutex
     pthread_mutex_unlock(&ncurses_mutex);
+}
+
+void TUI::distribute_network() {
+    // Add example status messages
+    add_status_message("Starting network distribution...");
+    
+    // If server_ref is available, we can use actual information
+    if (server_ref) {
+        add_status_message("PeerPulse server is active");
+        add_status_message("Waiting for peer connections...");
+        
+        // Check for any clients
+        int err = server_ref->send_files();
+        if (err != 0) {
+                exit(-1);
+        }
+    } else {
+        add_status_message("Could not access server");
+        add_status_message("Network distribution could not be started");
+        exit(0);
+    }
+}
+
+void TUI::add_status_message(const std::string& message) {
+    // Thread-safe access to status_messages_ vector
+    pthread_mutex_lock(&clients_mutex);
+    
+    // Add timestamp to the message
+    time_t current_time;
+    char time_str[10];
+    time(&current_time);
+    strftime(time_str, sizeof(time_str), "[%H:%M:%S]", localtime(&current_time));
+    
+    std::string timestamped_message = std::string(time_str) + " " + message;
+    status_messages_.push_back(timestamped_message);
+    
+    // Keep a maximum of 100 messages (to prevent memory issues)
+    if (status_messages_.size() > 100) {
+        status_messages_.erase(status_messages_.begin());
+    }
+    
+    pthread_mutex_unlock(&clients_mutex);
+    
+    // If we're on the main interface, update it to show the new message
+    if (in_main) {
+        render_main_interface();
+    }
 }
 
 void TUI::run() {

@@ -28,9 +28,12 @@ private:
     int num_clients = 0;
     
     FILE *file;
+    size_t file_size;
     
 public:
+    // Laziness
     char* _script_buf;
+
     PeerServer(TUI &interface);
     void addFile(std::string& file_name);
 
@@ -46,6 +49,7 @@ public:
     };
     
     int start_socket();
+    int send_files();
 
     void run();
 

@@ -37,48 +37,50 @@ void print_bound_address(int sockfd) {
     }
 }
 
-long get_file_size(FILE* file) {
-    // Save current position
-    long original_pos = ftell(file);
-    if (original_pos == -1L) {
-        fclose(file);
-        return -1;
+void PeerServer::addFile(std::string& file_name) {
+    // Use binary mode and check for errors
+    FILE* file = fopen(file_name.c_str(), "rb");
+    if (!file) {
+        perror(("Error opening file: " + file_name).c_str());
+        return;
     }
 
-    // Seek to end
-    if (fseek(file, 0, SEEK_END) != 0) {
-        fclose(file);
-        return -1;
-    }
-
-    // Get size
-    long size = ftell(file);
+    // Get file size properly
+    fseek(file, 0, SEEK_END);
+    file_size = ftell(file);
+    rewind(file);  // Important: reset file position to start
     
-    // Restore original position
-    if (fseek(file, original_pos, SEEK_SET) != 0) {
+    if (file_size <= 0) {
         fclose(file);
-        return -1;
+        fprintf(stderr, "Invalid file size or unable to determine size\n");
+        return;
     }
 
-    fclose(file);
-    return size;
-}
-
-void PeerServer::addFile(std::string &file_name) {
-        long file_size;
-        size_t read;
-        file = fopen(file_name.c_str(), "r");
-        if (file == NULL) {
-            perror("Error opening file.");
-            return;
+    // Allocate buffer (+1 for null terminator if needed)
+    char* buffer = new char[file_size + 1];
+    
+    // Read file content with proper error checking
+    size_t bytes_read = fread(buffer, 1, file_size, file);
+    if (bytes_read != static_cast<size_t>(file_size)) {
+        if (feof(file)) {
+            fprintf(stderr, "Unexpected end of file\n");
+        } else if (ferror(file)) {
+            perror("Error reading file");
         }
+        
+        delete[] buffer;
+        fclose(file);
+        return;
+    }
 
-        file_size = get_file_size(file);
-        char *files = new char[file_size + 1];
-        read = fread(files, sizeof(char), file_size, file);
-        printf("hi %lu\n",read);
-        _script_buf = files;
-        puts(_script_buf);
+    // Null-terminate if treating as string
+    buffer[file_size] = '\0';
+    
+    // Handle the buffer (assuming _script_buf is a class member)
+    delete[] _script_buf;  // Clean up previous allocation if any
+    _script_buf = buffer;
+    
+    fclose(file);
 }
 
 int PeerServer::start_socket() {
@@ -126,16 +128,37 @@ int PeerServer::start_socket() {
         
         printf("Connection accepted from %s:%d\n", 
                inet_ntoa(c.address.sin_addr), ntohs(c.address.sin_port));
-        
+
         // Thread-safe update of server's client list
+        num_clients++;
         pthread_mutex_lock(&_clients_mutex);
-        c.id = num_clients++;  // Assign a client ID
+        c.id = num_clients;  // Assign a client ID
         _clients.push_back(c);
         
         // Signal the condition variable - the TUI is listening to this
         pthread_cond_signal(&_clients_cond);
         pthread_mutex_unlock(&_clients_mutex);
     }
+}
+
+int PeerServer::send_files() {
+    pthread_cancel(socket_thread);
+
+    std::string status_message;
+
+    pthread_mutex_lock(&_clients_mutex);
+
+    for (int i = 0; i < num_clients; i++) {
+            size_t data = _clients[i].send_buf(_script_buf, file_size);
+            if (data != file_size) {
+                    return -1;
+            }
+
+            status_message = "Sent file for client " + std::to_string(i) + "\n";
+            interface.add_status_message(status_message);
+    }
+    pthread_mutex_unlock(&_clients_mutex);
+    return 0;
 }
 
 void PeerServer::run() {

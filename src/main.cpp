@@ -30,9 +30,9 @@ int main(int argc, char** argv) {
         fileName = argv[1];
         server.addFile(fileName);
         puts(server._script_buf);
-        //server.run();  // This will now run the TUI in the main thread
+        server.run();  // This will now run the TUI in the main thread
         //
-        //g_tui = nullptr;  // Clear before normal exit
+        g_tui = nullptr;  // Clear before normal exit
     } catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << std::endl;
         return 1;
