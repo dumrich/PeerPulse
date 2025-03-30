@@ -21,17 +21,22 @@ int main(int argc, char** argv) {
     signal(SIGTERM, cleanup_handler);
 
     std::string fileName;
+    int nItems;
     
     try {
         TUI tui;
         g_tui = &tui;  // Store for signal handler
         
         PeerServer server(tui);
+        // Script Name
         fileName = argv[1];
+        
+        nItems = atoi(argv[2]);
+        
+        server.set_item_count(nItems);
         server.addFile(fileName);
-        puts(server._script_buf);
         server.run();  // This will now run the TUI in the main thread
-        //
+        
         g_tui = nullptr;  // Clear before normal exit
     } catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << std::endl;

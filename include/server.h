@@ -29,12 +29,18 @@ private:
     
     FILE *file;
     size_t file_size;
+
+    int item_count;
     
 public:
     // Laziness
     char* _script_buf;
 
     PeerServer(TUI &interface);
+
+    void set_item_count(int item_count);
+    int get_item_count();
+        
     void addFile(std::string& file_name);
 
     // Methods to expose client list and synchronization primitives

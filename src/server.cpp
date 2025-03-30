@@ -1,6 +1,7 @@
 #include <memory>
 #include <pthread.h>
 #include <server.h>
+#include <string>
 #include <tui.h>
 #include <stdio.h>
 #include <unistd.h>
@@ -9,32 +10,19 @@
 #include <arpa/inet.h>
 #include <net/if.h> 
 #include <string.h>
+#include <utility>
 
 PeerServer::PeerServer(TUI &interface) : interface(interface) {
     // Set up the TUI to monitor our client list
     interface.set_server_ref(this, &_clients_mutex, &_clients_cond, &_clients);
 }
 
-// Function to print the actual bound address
-void print_bound_address(int sockfd) {
-    struct sockaddr_in addr;
-    socklen_t addr_len = sizeof(addr);
-    
-    if (getsockname(sockfd, (struct sockaddr *)&addr, &addr_len) < 0) {
-        perror("getsockname");
-        return;
-    }
-    
-    char ip[INET_ADDRSTRLEN];
-    inet_ntop(AF_INET, &addr.sin_addr, ip, sizeof(ip));
-    
-    printf("\nServer is bound to:\n");
-    printf("  IP Address: %s\n", ip);
-    printf("  Port: %d\n", ntohs(addr.sin_port));
-    
-    if (strcmp(ip, "0.0.0.0") == 0) {
-        printf("\nNote: 0.0.0.0 means the server is listening on all available interfaces\n");
-    }
+void PeerServer::set_item_count(int item_count) {
+        this->item_count = item_count;
+}
+
+int PeerServer::get_item_count() {
+        return item_count;
 }
 
 void PeerServer::addFile(std::string& file_name) {
@@ -100,7 +88,7 @@ int PeerServer::start_socket() {
       
         exit(EXIT_FAILURE);
     }
-    
+
     address.sin_family = AF_INET;
     address.sin_addr.s_addr = INADDR_ANY;
     address.sin_port = htons(PORT);
@@ -117,8 +105,6 @@ int PeerServer::start_socket() {
         exit(EXIT_FAILURE);
     }
 
-    print_bound_address(sock_fd);
-
     while (1) {
         Client c;
         if ((c.client_fd = accept(sock_fd, (struct sockaddr*)&c.address, &c.length)) < 0) {
@@ -130,8 +116,8 @@ int PeerServer::start_socket() {
                inet_ntoa(c.address.sin_addr), ntohs(c.address.sin_port));
 
         // Thread-safe update of server's client list
-        num_clients++;
         pthread_mutex_lock(&_clients_mutex);
+        num_clients++;
         c.id = num_clients;  // Assign a client ID
         _clients.push_back(c);
         
@@ -141,21 +127,54 @@ int PeerServer::start_socket() {
     }
 }
 
+static std::vector<std::pair<int, int>> splitNumber(int total, int n) {
+    std::vector<std::pair<int, int>> pairs;
+    
+    if (n <= 0 || total < 0) {
+        return pairs; // return empty vector for invalid input
+    }
+
+    int chunkSize = total / n;
+    int remainder = total % n;
+    int start = 0;
+
+    for (int i = 0; i < n; ++i) {
+        int end = start + chunkSize - 1;
+        
+        // Distribute remainder across first few chunks
+        if (i < remainder) {
+            end += 1;
+        }
+
+        pairs.emplace_back(start, end);
+        start = end + 1;
+    }
+
+    return pairs;
+}
+
 int PeerServer::send_files() {
     pthread_cancel(socket_thread);
 
     std::string status_message;
 
+    std::vector<std::pair<int, int>> pairs = splitNumber(get_item_count(), num_clients);
+
+    std::string bounds;
+    
     pthread_mutex_lock(&_clients_mutex);
 
     for (int i = 0; i < num_clients; i++) {
-            size_t data = _clients[i].send_buf(_script_buf, file_size);
-            if (data != file_size) {
-                    return -1;
-            }
-
-            status_message = "Sent file for client " + std::to_string(i) + "\n";
-            interface.add_status_message(status_message);
+        size_t data = _clients[i].send_buf(_script_buf, file_size);
+        std::pair<int, int>& set = pairs[i];
+      
+        if (data != file_size) {
+                return -1;
+        }
+        status_message = "Sent file for client " + std::to_string(i) + "\n";
+        interface.add_status_message(status_message);
+        bounds = std::to_string(set.first) + " " + std::to_string(set.second);
+        _clients[i].send_buf(bounds.c_str(), bounds.size());
     }
     pthread_mutex_unlock(&_clients_mutex);
     return 0;

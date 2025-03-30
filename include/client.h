@@ -12,6 +12,7 @@ struct Client {
 
     Client() : client_fd(-1), id(-1) { memset(&address, 0, sizeof(address)); };
 
-    size_t send_buf(char* buf, size_t file_size);
+    size_t send_buf(const char* buf, size_t file_size);
+    size_t send_int(int value);
      
 };

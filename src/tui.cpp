@@ -505,9 +505,7 @@ void TUI::add_status_message(const std::string& message) {
     pthread_mutex_unlock(&clients_mutex);
     
     // If we're on the main interface, update it to show the new message
-    if (in_main) {
-        render_main_interface();
-    }
+    render_main_interface();
 }
 
 void TUI::run() {
