@@ -472,7 +472,7 @@ void TUI::distribute_network() {
         add_status_message("PeerPulse server is active");
         add_status_message("Waiting for peer connections...");
         
-        // Check for any clients
+        // Check For Any clients
         int err = server_ref->send_files();
         if (err != 0) {
                 exit(-1);

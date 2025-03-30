@@ -209,7 +209,7 @@ int PeerServer::recv_output() {
     interface.add_status_message("Receiving output from clients...");
 
     for (int i = 0; i < num_clients; i++) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+      //std::this_thread::sleep_for(std::chrono::milliseconds(400));
         interface.add_status_message("Reading output from client " + std::to_string(i));
         
         size_t total_received = 0;

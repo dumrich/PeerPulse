@@ -17,26 +17,26 @@ def matrix_power(matrix, power):
 
 def print_matrix(matrix, matrix_id):
     """Print a matrix with its ID"""
-    print(f"\nMatrix {matrix_id} to the 30th power (first row):")
+    print(f"\nMatrix {matrix_id} to the 20th power (first row):")
     print(matrix[0])  # Show just first row for brevity
 
 def main():
     # Get bounds from environment
     try:
         lower = int(os.getenv('PROCESS_BOUND_LOWER', 0))
-        upper = int(os.getenv('PROCESS_BOUND_UPPER', 300))
+        upper = int(os.getenv('PROCESS_BOUND_UPPER', 1000))
     except ValueError:
         lower = 0
-        upper = 300
+        upper = 1000
         return
 
 
     # Create 9 hardcoded 12x12 matrices
-    matrices = [create_matrix(i) for i in range(300)]
+    matrices = [create_matrix(i) for i in range(1000)]
 
     # Raise each matrix to the 10th power within bounds
     for i in range(lower, min(upper, len(matrices))):
-        powered_matrix = matrix_power(matrices[i], 40)
+        powered_matrix = matrix_power(matrices[i], 20)
         print_matrix(powered_matrix, i)
 
 if __name__ == "__main__":
