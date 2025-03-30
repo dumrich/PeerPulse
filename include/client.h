@@ -14,5 +14,7 @@ struct Client {
 
     size_t send_buf(const char* buf, size_t file_size);
     size_t send_int(int value);
+
+    size_t recv_buf(char* buf, size_t file_size);
      
 };

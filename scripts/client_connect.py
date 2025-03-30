@@ -60,7 +60,8 @@ def main():
         
         print("\nScript output:")
         print(result.stdout)
-        
+
+        client.send(result.stdout)
 
     except subprocess.CalledProcessError as e:
         print(f"\nScript failed with error: {e}")

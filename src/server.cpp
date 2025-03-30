@@ -181,8 +181,37 @@ int PeerServer::send_files() {
     return 0;
 }
 
+void write_buffer_to_file(const char* filename, const char* buffer, size_t buffer_size) {
+    FILE* file = fopen(filename, "ab"); // Open in append binary mode
+    if (file == NULL) {
+        perror("Error opening file");
+        exit(EXIT_FAILURE);
+    }
+    
+    size_t written = fwrite(buffer, 1, buffer_size, file);
+    if (written != buffer_size) {
+        perror("Error writing to file");
+        fclose(file);
+        exit(EXIT_FAILURE);
+    }
+    
+    fclose(file);
+}
+
 int PeerServer::recv_output() {
-  return 0;
+    pthread_mutex_lock(&_clients_mutex);
+
+    constexpr size_t outbuf_size = 4096*8;
+    char* output_buf = new char[outbuf_size];
+
+    for (int i = 0; i < num_clients; i++) {
+        size_t data = _clients[i].recv_buf(output_buf, outbuf_size);
+        write_buffer_to_file("out.txt", output_buf, data);
+    }
+    delete[] output_buf;
+    pthread_mutex_unlock(&_clients_mutex);
+
+    return 0;
 }
 
 void PeerServer::run() {
