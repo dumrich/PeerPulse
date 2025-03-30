@@ -1,4 +1,6 @@
 #include <memory>
+#include <thread>
+#include <chrono>
 #include <pthread.h>
 #include <server.h>
 #include <string>
@@ -134,6 +136,7 @@ static std::vector<std::pair<int, int>> splitNumber(int total, int n) {
         return pairs; // return empty vector for invalid input
     }
 
+
     int chunkSize = total / n;
     int remainder = total % n;
     int start = 0;
@@ -199,17 +202,20 @@ void write_buffer_to_file(const char* filename, const char* buffer, size_t buffe
 }
 
 int PeerServer::recv_output() {
-    pthread_mutex_lock(&_clients_mutex);
 
     constexpr size_t outbuf_size = 4096*8;
     char* output_buf = new char[outbuf_size];
 
     for (int i = 0; i < num_clients; i++) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+        pthread_mutex_lock(&_clients_mutex);
         size_t data = _clients[i].recv_buf(output_buf, outbuf_size);
+        pthread_mutex_unlock(&_clients_mutex);
         write_buffer_to_file("out.txt", output_buf, data);
+        
     }
     delete[] output_buf;
-    pthread_mutex_unlock(&_clients_mutex);
 
     return 0;
 }

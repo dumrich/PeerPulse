@@ -10,6 +10,7 @@ size_t Client::send_buf(const char *buf, size_t file_size) {
 }
 
 size_t Client::recv_buf(char *buf, size_t file_size) {
+    setsockopt(client_fd, SOL_SOCKET, SO_RCVBUF, &file_size, sizeof(file_size));
     size_t bytes_sent = recv(client_fd, buf, file_size, 0);
 
     return bytes_sent;
